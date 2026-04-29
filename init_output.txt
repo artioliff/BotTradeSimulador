@@ -1,0 +1,26 @@
+Cliente Mainnet (API real)
+
+Iniciando coleta LIVE da Binance para BTCUSDT...
+======================================================================
+Preco atual: $77530.16
+
+Estrategia selecionada: RSI - Relative Strength Index
+Descricao: Compra em sobrevenda (RSI < limite_inferior) e vende em sobrecompra (RSI > limite_superior) com protecao de STOP-LOSS, TAKE-PROFIT e TRAILING STOP. RSI calculado sobre fechamentos de candle; stops verificados a cada tick.
+Parametros:
+  - periodo_rsi: 14
+  - limite_inferior_sobrevenda: 30
+  - limite_superior_sobrecompra: 70
+  - gestao_de_quantidade: 0.00015 BTC (fixo)
+  - saldo_inicial_usdt: 20
+  - saida_gradual: False
+  - stop_loss_percentual: 1.5%
+  - take_profit_percentual: 2.5%
+  - trailing_stop_percentual: 0.8%
+
+Conectando WebSocket...
+
+WebSocket conectado! Coletando dados em tempo real...
+Pressione Ctrl+C para parar e salvar o relatorio.
+
+[08:22:00] >>> Candle fechado @ $77530.17
+  Aquecendo RSI... (1/15, faltam 14 candles)
