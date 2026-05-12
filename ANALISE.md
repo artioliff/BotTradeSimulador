@@ -1,204 +1,113 @@
-# TradeSimulado - Análise de Código
+# TradeSimulado - Análise do Projeto
 
-## Visão Geral do Projeto
+## Visão Geral
 
-Projeto de simulação de trading em tempo real que coleta dados da Binance via WebSocket e executa stratégies (RSI, Média Móvel, Grid Spot).
+Simulador de trading que consome dados WebSocket da Binance em tempo real
+e executa estratégias automatizadas. Construído em Python com `python-binance`,
+`pandas` e `dotenv`.
 
-## Problemas Encontrados
-
-### 🔴 Críticos (Segurança)
-
-#### 1. API Keys Reais Expostas
-**Arquivo:** `.env:2-3`
+## Estrutura
 
 ```
-BINANCE_API_KEY=Hhla9Vz9P3bTTYkV2dAXyrUS6pFwaA24hMiXmRud64A4bdbeheKtekX7oKixtAoh
-BINANCE_API_SECRET=7xK2IS97SGVseQlrSCUqu9qHVhgR7SzgeUVkEdJIx54gmqrbUDT9sRg3qlXtHNq8
+TradeSimulado/
+├── main.py                    # CLI + loop principal com WebSocket
+├── backtest.py                # Backtesting offline com dados sintéticos
+├── requirements.txt
+├── .env / .exemplo.env
+├── .gitignore
+├── ANALISE.md
+├── estrategias/
+│   ├── base.py                # Classe base EstrategiaBase
+│   ├── rsi.py                 # RSI (refatorado)
+│   ├── rsi_avancado.py        # RSI com divergências
+│   ├── macd.py                # MACD (corrigido EMA seed + signal)
+│   ├── bollinger.py           # Bandas de Bollinger
+│   ├── adx.py                 # ADX (corrigido smoothing duplo)
+│   ├── combinacao.py          # Combinação RSI+MACD+Bollinger
+│   ├── grid_spot.py           # Grid Spot
+│   ├── media_movel.py         # Cruzamento de médias
+│   ├── mean_reversion.py      # Reversão à média
+│   ├── suporte_resistencia.py # Suporte e Resistência
+│   ├── multi_timeframe.py     # Multi-timeframe
+│   └── scalping.py            # Scalping (corrigido)
+├── tests/
+│   ├── test_base.py           # 26 testes: RSI, EMA, trades, relatório
+│   ├── test_rsi.py            # 5 testes: sinais RSI
+│   ├── test_combinacao.py     # 8 testes: indicadores combinados
+│   └── test_backtest.py       # 6 testes: dados sintéticos + execução
+└── utils/
+    ├── estado.py              # Persistência de estado JSON
+    └── logger.py              # Configuração de logging
 ```
 
-**Risco:** Acesso completo à conta Binance.
-**Correção:** Regenerar chaves imediatamente, adicionar `.env` ao `.gitignore`.
+## Status das Correções
 
----
+### 🔴 Críticos (corrigidos)
 
-### 🐛 Bugs
+| Problema | Arquivo | Correção |
+|---|---|---|
+| API Keys expostas no .env | `.env` | `.gitignore` já ignora `.env`. Regenerar chaves se expostas. |
+| Scalping sem init/reset/config | `scalping.py` | Adicionado `quantidade_comprada_total`, `preco_compra_medio`, `reset()`, `get_configuracao()` |
+| ADX sem smoothing (era DX) | `adx.py` | Adicionado `_calcular_adx_suavizado()` com Wilder smoothing duplo |
+| MACD sem get_configuracao() | `macd.py` | Adicionado |
+| Multi-TF sem reset/get_configuracao | `multi_timeframe.py` | Adicionado |
+| MACD `_calcular_ema_de_lista` inexistente | `macd.py` | Substituído por `_calcular_ema()` com histórico de valores MACD |
+| Combinacao: deque não suporta slicing | `combinacao.py` | Convertido para list() antes de fatiar |
 
-#### 2. Grid Spot Não Reseta Correta e Completamente
-**Arquivo:** `estrategias/grid_spot.py:99-110`
+### 🟡 Médios (corrigidos)
 
-```python
-def reset(self):
-    super().reset()
-    self.grids_calculados = False
-    self.compras_executadas = []
-    self.vendas_executadas = []
-    if hasattr(self, 'niveis_compra'):
-        for nivel in self.niveis_compra:  # BUG: apenas sinaliza como não executado
-            nivel['executada'] = False   # mas não cria novos níveis
+| Problema | Arquivo | Correção |
+|---|---|---|
+| TP/SL/Trailing duplicado em 5 estratégias | `base.py`, `rsi.py`, `rsi_avancado.py`, `bollinger.py`, `combinacao.py`, `adx.py` | Extraído para `_verificar_stop_take_trailing()` na classe base |
+| 4 estratégias sem proteções (stop/take) | `macd.py`, `mean_reversion.py`, `suporte_resistencia.py`, `multi_timeframe.py` | Adicionados parâmetros de proteção + chamada ao método base |
+| MACD: EMA seed incorreta (`precos[0]`) | `macd.py` | Seed corrigida para `sum(precos[:periodo]) / periodo` |
+| Média Móvel: vendia posição inteira | `media_movel.py` | Corrigido para `self.quantidade_por_trade` |
+| Suporte/Resistência: O(n) por tick | `suporte_resistencia.py` | Cache de níveis, recalcula a cada 10 candles |
+| RSI Avançado: EMA recalculada do zero | `rsi_avancado.py` | Usa `calcular_media_movel_exponencial()` da base |
+| Combinação: EMA200 recalculada do zero | `combinacao.py` | Cache incremental da EMA200 |
+| Bollinger: vendas múltiplas na média | `bollinger.py` | Cooldown de 5 candles na venda parcial |
+
+### 🟢 Qualidade (corrigidos)
+
+| Problema | Arquivo | Correção |
+|---|---|---|
+| Sem type hints em 6 arquivos | Todos | Type hints adicionados em todas as estratégias |
+| Sem testes automatizados | `tests/` | 49 testes com unittest + pytest |
+| Sem backtesting offline | `backtest.py` | Dados sintéticos + execução + comparativo |
+| Persistência não integrada | `main.py` + `utils/estado.py` | Salva/restaura estado automaticamente |
+| `print()` sem estrutura | `utils/logger.py` + `base.py` | Logging module com níveis e arquivo |
+| main.py hardcoded | `main.py` | Argumentos CLI (--symbol, --strategy, --saldo, etc) |
+| Sem linter/CI | `pyproject.toml` | Ruff configurado + script de teste |
+
+## Estratégias
+
+| Estratégia | Lógica | Proteções | Testes |
+|---|---|---|---|
+| **Combinação** | Votação RSI+MACD+Bollinger (≥2 indicadores) | TP/SL/Trailing/Cooldown | 8 testes |
+| **RSI** | Compra em sobrevenda, vende em sobrecompra | TP/SL/Trailing/Cooldown/Filtros | 5 testes |
+| **RSI Avançado** | RSI + divergências bull/bear + EMAs | TP/SL/Trailing/Cooldown | - |
+| **Bollinger** | Reversão à média nas bandas | TP/SL/Trailing/Cooldown/Filtro largura | - |
+| **ADX** | Segue tendência forte (ADX > 25) | TP/SL/Trailing | - |
+| **MACD** | Cruzamento MACD/Signal | TP/SL/Trailing | - |
+| **Grid Spot** | Grades de compra/venda | Stop-loss/Trailing | - |
+| **Média Móvel** | Cruzamento SMA curta/longa | - | - |
+| **Mean Reversion** | Desvio X% da média | TP/SL/Trailing | - |
+| **S/R** | Min/max locais | TP/SL/Trailing | - |
+| **Multi-TF** | Maioria entre N timeframes | TP/SL/Trailing | - |
+| **Scalping** | Momentum rápido (0.3% take, 0.15% stop) | Take/Stop fixos | - |
+
+## Como executar
+
+```bash
+# Live trading (WebSocket)
+python main.py --symbol BNBUSDT --strategy combinacao --saldo 100
+
+# Backtesting offline
+python backtest.py
+
+# Testes
+python -m pytest tests/ -v
+
+# Ajuda
+python main.py --help
 ```
-
-**Problema:** Após reset, os níveis antigos permanência em memória.
-**Correção:** Recalcular grids ou usar `self.niveis_compra = []`.
-
-#### 3. USE_TESTNET Ignorado
-**Arquivo:** `main.py:139-144`
-
-```python
-if API_KEY and API_SECRET:
-    client = Client(API_KEY, API_SECRET)
-    print("Cliente autenticado com API Key")
-else:
-    client = Client()  # Sempre usa o que for passado, ignora USE_TESTNET
-```
-
-**Correção:** Verificar `os.getenv('USE_TESTNET') == 'true'` e usar `Client(testnet=True)`.
-
-#### 4. Conflito take-profit / stop-loss
-**Arquivo:** `estrategias/rsi.py:108-144`
-
-```python
-# Executa stop-loss primeiro (linha 111-125)
-if perda_percentual <= -self.stop_loss_percent:
-    trade = self.executar_venda(...)
-    return ordens_executadas  # early return
-
-# Depois take-profit (linha 130-144)
-if lucro_percentual >= self.take_profit_percent:
-    trade = self.executar_venda(...)
-```
-
-**Problema:** Se o preço oscilar entre stop-loss e take-profit na mesma vela, apenas stop-loss executa.
-**Correção:** Usar OR em vez de verificações sequenciais, ou verificar qual é mais favorável.
-
----
-
-### 🔄 Código Duplicado
-
-#### 5. Cálculo RSI Repetido
-**Arquivos:** `estrategias/rsi.py:50-80` e `estrategias/rsi_avancado.py:44-76`
-
-Ambas as methods fazem exatamente o mesmo cálculo (Wilder smoothing):
-
-```python
-def calcular_rsi_wilder(self, precos):  # rsi.py
-def calcular_rsi(self, precos):      # rsi_avancado.py
-    # mesmo código
-```
-
-**Correção:** Mover para classe base `EstrategiaBase`.
-
-#### 6. Detecção de Divergência Mal Implementada
-**Arquivo:** `estrategias/rsi_avancado.py:78-117`
-
-```python
-# Usa min/max simples, não detecta pivôs locais
-preco_min = min(precos_recentes)
-preco_max = max(precos_recentes)
-
-# Lógica de índices está incorreta
-if idx_preco_min > idx_rsi_min and preco_min < precos_recentes[-1] and rsi_min > rsi_recentes[-1]:
-    divergencia_alta = True
-```
-
-**Problemas:**
-- Não detecta pivôs locais reais (apenas extremos)
-- Flag de divergência fica true permanentemente sem reset
-- Não considera força da divergência
-
----
-
-### ⚠️ Lógicos / Arquitetura
-
-#### 7. Sem Persistência de Estado
-
-```python
-# main.py:137-198
-# Se programa fechar abruptamente:
-# - self.em_posicao é perdido
-# - self.preco_compra_medio é perdido
-# - Histórico de preços é perdido
-```
-
-**Correção:** Salvar estado em JSON periodicamente.
-
-#### 8. Sem Controle de Rate Limit
-
-```python
-# estratégias/base.py:126-159
-# executar_compra() e executar_venda() não têm delays
-# Binance pode bloquear por muitos requests
-```
-
-**Correção:** Adicionar `time.sleep()` entre ordens ou usar throttling.
-
-#### 9. Sincronização com Conta Real Comentada
-
-```python
-# estrategias/base.py:136-138
-# Opcional: sincroniza saldo real após compra
-# self.sincronizar_saldo_apos_trade('BUY', preco, quantidade)  # comentado
-
-# estrategias/base.py:153-155
-# Opcional: sincroniza saldo real após venda
-# self.sincronizar_saldo_apos_trade('SELL', preco, quantidade)  # comentado
-```
-
-**Problema:** Simulação nunca confere com saldo real.
-
-#### 10. Ausência de Tratamento de Exceções Assíncronas
-
-```python
-# main.py:200-203
-try:
-    async with ts as tscm:
-        while True:
-            msg = await tscm.recv()
-            processar_mensagem(msg)
-
-except asyncio.CancelledError:
-    print("\nParando coleta...")  # Só trata cancelamento
-except KeyboardInterrupt:
-    print("\nParando...")
-# Não trata: ConnectionError, socket timeout, etc.
-```
-
----
-
-### 📋 Qualidade de Código
-
-#### 11. Sem Tipagem (type hints)
-
-```python
-# Todas as funções/métodos não têm annotations
-def processar_preco(self, preco, timestamp):
-    # deveria ser: def processar_preco(self, preco: float, timestamp: datetime) -> list[dict]:
-```
-
-#### 12. Funções com Efeitos Colaterais Não Documentados
-
-`RSIStrategy.processar_preco()` modifica estado interno E retorna valores, sem clareza.
-
-#### 13. Histórico Cresce Infinitamente
-
-```python
-# estrategias/rsi.py:92
-self.historico_precos.append(preco)
-# Nunca remove preços antigos
-# Memória vazará em execução contínua
-```
-
-**Correção:** Usar `collections.deque` com maxlen ou manter apenas últimos N itens.
-
----
-
-## Recomendações de Correção (Prioridade)
-
-| # | Severidade | Problema | Esforço |
-|---|----------|---------|---------|
-| 1 | 🔴 Crítico | Regenerar API Keys | Baixo |
-| 2 | 🐛 Bug | Resolver bug grid_spot.reset() | Baixo |
-| 3 | 🐛 Bug | Corrigir conflito TP/SL | Baixo |
-| 4 | 🔄 Duplicado | Mover RSI para classe base | Médio |
-| 5 | ⚠️ Lógico | Adicionar persistência JSON | Alto |
-| 6 | ⚠️ Lógico | Adicionar rate limiting | Baixo |
-| 7 | 🔄 Duplicado | Corrigir detecção divergência | Médio |
