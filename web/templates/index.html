@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}TradeSimulado - Dashboard{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-primary">
+            <div class="card-body text-center py-4">
+                <h1 class="display-5 fw-bold"><i class="bi bi-graph-up-arrow text-primary"></i> TradeSimulado</h1>
+                <p class="lead text-secondary">Simulador de estratégias de trading com backtesting offline</p>
+                <p class="text-secondary">
+                    <span class="badge bg-primary me-1">12 estratégias</span>
+                    <span class="badge bg-success me-1">49 testes</span>
+                    <span class="badge bg-info">Python 3.12</span>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    {% for chave, info in estrategias.items() %}
+    <div class="col-md-4 col-lg-3">
+        <div class="card h-100 border-secondary strategy-card" data-estrategia="{{ chave }}">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-cpu"></i> {{ info.nome }}
+                </h5>
+                <p class="card-text small text-secondary">{{ info.descricao or '' }}</p>
+                <span class="badge bg-secondary">{{ chave }}</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header"><i class="bi bi-lightning"></i> Ações Rápidas</div>
+            <div class="card-body">
+                <a href="/backtest" class="btn btn-primary w-100 mb-2">
+                    <i class="bi bi-bar-chart"></i> Executar Backtest
+                </a>
+                <button class="btn btn-outline-secondary w-100" onclick="abrirTerminal()">
+                    <i class="bi bi-terminal"></i> Ver Comando CLI
+                </button>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card border-secondary">
+            <div class="card-header"><i class="bi bi-info-circle"></i> Sobre</div>
+            <div class="card-body small">
+                <p>Conecta-se à Binance via WebSocket para coleta de dados em tempo real e executa estratégias automatizadas com proteções de stop-loss, take-profit e trailing stop.</p>
+                <p class="mb-0 text-secondary">Python • FastAPI • Binance API • Pandas</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function abrirTerminal() {
+    alert('Para executar via CLI:\n\npython main.py --symbol BNBUSDT --strategy combinacao --saldo 100');
+}
+</script>
+{% endblock %}

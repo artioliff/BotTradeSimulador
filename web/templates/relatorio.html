@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Relatório - TradeSimulado{% endblock %}
+
+{% block content %}
+<div class="card border-success mb-4">
+    <div class="card-header"><i class="bi bi-file-text"></i> Relatório - {{ dados.estrategia }}</div>
+    <div class="card-body">
+        <div class="row text-center mb-4">
+            <div class="col-3">
+                <div class="metric"><div class="metric-value">{{ dados.total_trades }}</div><div class="metric-label">Trades</div></div>
+            </div>
+            <div class="col-3">
+                <div class="metric"><div class="metric-value text-{{ 'success' if dados.lucro_usdt >= 0 else 'danger' }}">
+                    {{ '+' if dados.lucro_usdt >= 0 }}{{ dados.lucro_usdt }}</div><div class="metric-label">Lucro</div></div>
+            </div>
+            <div class="col-3">
+                <div class="metric"><div class="metric-value">{{ dados.taxa_acerto }}%</div><div class="metric-label">Acerto</div></div>
+            </div>
+            <div class="col-3">
+                <div class="metric"><div class="metric-value">{{ dados.retorno_percentual }}%</div><div class="metric-label">Retorno</div></div>
+            </div>
+        </div>
+
+        <h5 class="mt-4">Trades</h5>
+        <div class="table-responsive">
+            <table class="table table-dark table-striped table-sm">
+                <thead><tr><th>#</th><th>Tipo</th><th>Preço</th><th>Qtd</th><th>Motivo</th></tr></thead>
+                <tbody>
+                    {% for t in dados.trades %}
+                    <tr class="{{ 'table-success' if t.tipo == 'BUY' else 'table-danger' }}">
+                        <td>{{ loop.index }}</td>
+                        <td>{{ t.tipo }}</td>
+                        <td>${{ "%.2f"|format(t.preco) }}</td>
+                        <td>{{ t.quantidade }}</td>
+                        <td>{{ t.motivo }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}TradeSimulado - Backtest{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-5">
+        <div class="card border-primary mb-4">
+            <div class="card-header"><i class="bi bi-gear"></i> Configuração</div>
+            <div class="card-body">
+                <form id="backtestForm">
+                    <div class="mb-3">
+                        <label class="form-label">Estratégia</label>
+                        <select class="form-select" id="estrategia" required>
+                            <option value="">Selecione...</option>
+                            {% for chave, info in estrategias.items() %}
+                            <option value="{{ chave }}">{{ info.nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Saldo Inicial (USDT)</label>
+                            <input type="number" class="form-control" id="saldo" value="1000" min="10" step="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Quantidade</label>
+                            <input type="number" class="form-control" id="quantidade" value="0.1" min="0.001" step="0.01">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Tipo de Dado</label>
+                        <select class="form-select" id="tipoDado">
+                            <option value="tendencia">Tendência (3 fases)</option>
+                            <option value="sintetico">Sintético (random walk)</option>
+                        </select>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Candles</label>
+                            <input type="number" class="form-control" id="nCandles" value="500" min="100" step="100">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Preço Inicial</label>
+                            <input type="number" class="form-control" id="precoInicial" value="600" min="1">
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Stop Loss (%)</label>
+                            <input type="number" class="form-control" id="stopLoss" value="2" min="0.5" step="0.5">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Take Profit (%)</label>
+                            <input type="number" class="form-control" id="takeProfit" value="4" min="1" step="0.5">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" id="btnExecutar">
+                        <i class="bi bi-play"></i> Executar Backtest
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-secondary mb-4">
+            <div class="card-header"><i class="bi bi-arrow-left-right"></i> Comparar Estratégias</div>
+            <div class="card-body">
+                <form id="compararForm">
+                    <div class="mb-3">
+                        <label class="form-label">Estratégias (separadas por vírgula)</label>
+                        <input type="text" class="form-control" id="estrategiasLista" value="rsi, bollinger, combinacao" placeholder="rsi, bollinger, macd">
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <label class="form-label">Candles</label>
+                            <input type="number" class="form-control" id="compCandles" value="500">
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Saldo</label>
+                            <input type="number" class="form-control" id="compSaldo" value="1000">
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-outline-info w-100">
+                        <i class="bi bi-bar-chart"></i> Comparar
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div id="resultadoArea" style="display:none;">
+            <div class="card border-success mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-check-circle text-success"></i> Resultado</span>
+                    <span id="tempoExecucao" class="badge bg-secondary"></span>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-3">
+                        <div class="col-3">
+                            <div class="metric">
+                                <div class="metric-value" id="totalTrades">0</div>
+                                <div class="metric-label">Trades</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="metric">
+                                <div class="metric-value" id="lucroValor">$0</div>
+                                <div class="metric-label">Lucro</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="metric">
+                                <div class="metric-value" id="taxaAcerto">0%</div>
+                                <div class="metric-label">Acerto</div>
+                            </div>
+                        </div>
+                        <div class="col-3">
+                            <div class="metric">
+                                <div class="metric-value" id="retornoPercent">0%</div>
+                                <div class="metric-label">Retorno</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="progress mb-3" style="height: 20px;">
+                        <div class="progress-bar bg-success" id="progressAcerto" role="progressbar" style="width:0%"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-secondary mb-3">
+                <div class="card-header"><i class="bi bi-table"></i> Últimos Trades</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped table-sm mb-0" id="tabelaTrades">
+                            <thead>
+                                <tr><th>#</th><th>Tipo</th><th>Preço</th><th>Qtd</th><th>Motivo</th><th>Data</th></tr>
+                            </thead>
+                            <tbody id="tradesBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border-secondary">
+                <div class="card-header"><i class="bi bi-graph-up"></i> Trade Performance</div>
+                <div class="card-body">
+                    <canvas id="chartTrades" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="compararArea" style="display:none;">
+            <div class="card border-info">
+                <div class="card-header"><i class="bi bi-bar-chart"></i> Comparativo</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-dark table-striped" id="tabelaComparar">
+                            <thead>
+                                <tr><th>Estratégia</th><th>Trades</th><th>Lucro</th><th>Retorno</th><th>Acerto</th></tr>
+                            </thead>
+                            <tbody id="compararBody"></tbody>
+                        </table>
+                    </div>
+                    <canvas id="chartComparar" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="loadingSpinner" style="display:none;" class="text-center py-5">
+            <div class="spinner-border text-primary" role="status" style="width:3rem;height:3rem;">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+            <p class="mt-2 text-secondary">Executando backtest...</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let profitChart = null;
+
+document.getElementById('backtestForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData();
+    form.append('estrategia', document.getElementById('estrategia').value);
+    form.append('saldo', document.getElementById('saldo').value);
+    form.append('quantidade', document.getElementById('quantidade').value);
+    form.append('n_candles', document.getElementById('nCandles').value);
+    form.append('preco_inicial', document.getElementById('precoInicial').value);
+    form.append('tipo_dado', document.getElementById('tipoDado').value);
+    form.append('stop_loss', parseFloat(document.getElementById('stopLoss').value) / 100);
+    form.append('take_profit', parseFloat(document.getElementById('takeProfit').value) / 100);
+
+    if (!document.getElementById('estrategia').value) {
+        alert('Selecione uma estratégia');
+        return;
+    }
+
+    document.getElementById('resultadoArea').style.display = 'none';
+    document.getElementById('loadingSpinner').style.display = 'block';
+
+    try {
+        const res = await fetch('/api/backtest/executar', { method: 'POST', body: form });
+        const data = await res.json();
+        document.getElementById('loadingSpinner').style.display = 'none';
+
+        if (!data.ok) {
+            alert('Erro: ' + (data.erro || 'Erro desconhecido'));
+            return;
+        }
+
+        const r = data.resultado;
+        document.getElementById('resultadoArea').style.display = 'block';
+        document.getElementById('tempoExecucao').textContent = r.tempo_execucao + 's';
+        document.getElementById('totalTrades').textContent = r.total_trades;
+        document.getElementById('lucroValor').textContent = (r.lucro_usdt >= 0 ? '+' : '') + '$' + r.lucro_usdt.toFixed(2);
+        document.getElementById('lucroValor').className = r.lucro_usdt >= 0 ? 'metric-value text-success' : 'metric-value text-danger';
+        document.getElementById('taxaAcerto').textContent = r.taxa_acerto.toFixed(1) + '%';
+        document.getElementById('retornoPercent').textContent = (r.retorno_percentual >= 0 ? '+' : '') + r.retorno_percentual.toFixed(2) + '%';
+        document.getElementById('progressAcerto').style.width = r.taxa_acerto + '%';
+        document.getElementById('progressAcerto').className = 'progress-bar bg-' + (r.taxa_acerto >= 50 ? 'success' : 'warning');
+
+        const tbody = document.getElementById('tradesBody');
+        tbody.innerHTML = '';
+        r.trades.slice(-20).forEach((t, i) => {
+            const tr = document.createElement('tr');
+            tr.className = t.tipo === 'BUY' ? 'table-success' : 'table-danger';
+            tr.innerHTML = `<td>${i + 1}</td><td>${t.tipo}</td><td>$${t.preco.toFixed(2)}</td><td>${t.quantidade}</td><td>${t.motivo}</td><td>${t.timestamp}</td>`;
+            tbody.appendChild(tr);
+        });
+
+        if (profitChart) profitChart.destroy();
+        const ctx = document.getElementById('chartTrades').getContext('2d');
+        const labels = r.trades.map((t, i) => `#${i + 1}`);
+        const prices = r.trades.map(t => t.preco);
+        const colors = r.trades.map(t => t.tipo === 'BUY' ? '#198754' : '#dc3545');
+        profitChart = new Chart(ctx, {
+            type: 'bar',
+            data: { labels, datasets: [{ label: 'Preço', data: prices, backgroundColor: colors }] },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: { y: { beginAtZero: false } }
+            }
+        });
+    } catch (err) {
+        document.getElementById('loadingSpinner').style.display = 'none';
+        alert('Erro de conexão: ' + err.message);
+    }
+});
+
+document.getElementById('compararForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = new FormData();
+    form.append('estrategias_lista', document.getElementById('estrategiasLista').value);
+    form.append('saldo', document.getElementById('compSaldo').value);
+    form.append('quantidade', '0.1');
+    form.append('n_candles', document.getElementById('compCandles').value);
+    form.append('preco_inicial', '600');
+
+    document.getElementById('compararArea').style.display = 'none';
+    document.getElementById('loadingSpinner').style.display = 'block';
+
+    try {
+        const res = await fetch('/api/backtest/comparar', { method: 'POST', body: form });
+        const data = await res.json();
+        document.getElementById('loadingSpinner').style.display = 'none';
+
+        if (!data.ok) {
+            alert('Erro: ' + (data.erro || ''));
+            return;
+        }
+
+        document.getElementById('compararArea').style.display = 'block';
+        const tbody = document.getElementById('compararBody');
+        tbody.innerHTML = '';
+        const sorted = data.resultados.sort((a, b) => b.lucro - a.lucro);
+
+        sorted.forEach(r => {
+            const tr = document.createElement('tr');
+            const lucroClass = r.lucro >= 0 ? 'text-success' : 'text-danger';
+            tr.innerHTML = `<td><strong>${r.estrategia}</strong></td>
+                <td>${r.trades}</td>
+                <td class="${lucroClass}">${r.lucro >= 0 ? '+' : ''}$${r.lucro.toFixed(2)}</td>
+                <td class="${lucroClass}">${r.retorno >= 0 ? '+' : ''}${r.retorno.toFixed(2)}%</td>
+                <td>${r.acerto.toFixed(1)}%</td>`;
+            tbody.appendChild(tr);
+        });
+
+        const ctx = document.getElementById('chartComparar').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: sorted.map(r => r.estrategia),
+                datasets: [
+                    { label: 'Lucro ($)', data: sorted.map(r => r.lucro), backgroundColor: sorted.map(r => r.lucro >= 0 ? '#198754' : '#dc3545') },
+                    { label: 'Acerto (%)', data: sorted.map(r => r.acerto), backgroundColor: '#0d6efd' }
+                ]
+            },
+            options: { responsive: true, plugins: { legend: { position: 'top' } } }
+        });
+    } catch (err) {
+        document.getElementById('loadingSpinner').style.display = 'none';
+        alert('Erro: ' + err.message);
+    }
+});
+</script>
+{% endblock %}
