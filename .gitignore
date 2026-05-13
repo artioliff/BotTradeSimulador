@@ -6,3 +6,5 @@ resultados/
 *.log
 .vscode/
 .idea/
+init_output.txt
+init_error.txt

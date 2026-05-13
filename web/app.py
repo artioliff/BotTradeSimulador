@@ -2,6 +2,9 @@ import os
 import json
 import time
 import asyncio
+import subprocess
+import signal
+import sys
 from datetime import datetime
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -38,6 +41,9 @@ estrategias_disponiveis = {
 }
 
 _relatorios_cache = {}
+
+_live_process = None
+_live_log_path = None
 
 
 def _importar_estrategia(chave: str):
@@ -119,7 +125,7 @@ async def executar_backtest_api(
         tempo = round(time.time() - inicio, 3)
 
         trades = []
-        for t in est.trades[-50:]:
+        for t in est.trades[-200:]:
             ts = t["timestamp"]
             trades.append({
                 "tipo": t["tipo"],
@@ -127,19 +133,66 @@ async def executar_backtest_api(
                 "quantidade": t["quantidade"],
                 "timestamp": ts.strftime("%Y-%m-%d %H:%M") if hasattr(ts, "strftime") else str(ts),
                 "motivo": t.get("motivo", ""),
+                "rsi": t.get("rsi"),
+                "macd": t.get("macd"),
             })
+
+        candle_data = []
+        for c in candles[-300:]:
+            ts = c["timestamp"]
+            candle_data.append({
+                "time": int(ts.timestamp()) if hasattr(ts, "timestamp") else 0,
+                "open": c["open"],
+                "high": c["high"],
+                "low": c["low"],
+                "close": c["close"],
+                "volume": c["volume"],
+            })
+
+        trade_markers = []
+        for t in est.trades:
+            ts = t["timestamp"]
+            trade_markers.append({
+                "time": int(ts.timestamp()) if hasattr(ts, "timestamp") else 0,
+                "position": "aboveBar" if t["tipo"] == "SELL" else "belowBar",
+                "color": "#ef4444" if t["tipo"] == "SELL" else "#22c55e",
+                "shape": "arrowDown" if t["tipo"] == "SELL" else "arrowUp",
+                "text": f"{'V' if t['tipo']=='SELL' else 'C'} ${t['preco']:.2f}",
+                "size": 2,
+            })
+
+        sl_tp_levels = []
+        for i in range(0, len(trades)):
+            t = trades[i]
+            if t["tipo"] == "BUY" and i + 1 < len(trades):
+                preco_compra = t["preco"]
+                sl = round(preco_compra * (1 - stop_loss), 2)
+                tp = round(preco_compra * (1 + take_profit), 2)
+                saida = next((x for x in trades[i+1:] if x["tipo"] == "SELL"), None)
+                if saida:
+                    sl_tp_levels.append({
+                        "buy_time": t["timestamp"],
+                        "sell_time": saida["timestamp"],
+                        "buy_price": preco_compra,
+                        "sell_price": saida["preco"],
+                        "stop_loss": sl,
+                        "take_profit": tp,
+                    })
 
         resultado = {
             "estrategia": estrategias_disponiveis[estrategia]["nome"],
             "tempo_execucao": tempo,
             "candles": n_candles,
-            "total_trades": relatorio["total_trades"],
-            "lucro_usdt": relatorio["lucro_usdt"],
-            "retorno_percentual": relatorio["retorno_percentual"],
-            "taxa_acerto": relatorio["taxa_acerto"],
-            "saldo_final": relatorio["saldo_final_usdt"],
-            "portfolio": relatorio["valor_total_portfolio"],
+            "total_trades": relatorio.get("total_trades", 0),
+            "lucro_usdt": relatorio.get("lucro_usdt", 0),
+            "retorno_percentual": relatorio.get("retorno_percentual", 0),
+            "taxa_acerto": relatorio.get("taxa_acerto", 0),
+            "saldo_final": relatorio.get("saldo_final_usdt", saldo),
+            "portfolio": relatorio.get("valor_total_portfolio", saldo),
             "trades": trades,
+            "candle_data": candle_data,
+            "trade_markers": trade_markers,
+            "sl_tp_levels": sl_tp_levels,
         }
 
         rid = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -209,6 +262,118 @@ async def relatorio_page(request: Request, rid: str):
         "request": request,
         "dados": dados,
     })
+
+
+# ─────────────────────────────── Live Trading ───────────────────────────────
+
+@app.get("/live", response_class=HTMLResponse)
+async def live_page(request: Request):
+    return templates.TemplateResponse("live.html", {
+        "request": request,
+        "estrategias": estrategias_disponiveis,
+    })
+
+
+@app.post("/api/live/iniciar")
+async def live_iniciar(
+    symbol: str = Form(...),
+    estrategia: str = Form(...),
+    saldo: float = Form(100),
+    quantidade: float = Form(0.01),
+    interval: str = Form("1m"),
+    live_mode: bool = Form(False),
+    testnet: bool = Form(False),
+):
+    global _live_process, _live_log_path
+
+    if _live_process and _live_process.poll() is None:
+        return JSONResponse({"ok": False, "erro": "Bot ja esta em execucao"})
+
+    cmd = [
+        sys.executable, str(BASE_DIR.parent / "main.py"),
+        "--symbol", symbol,
+        "--strategy", estrategia,
+        "--saldo", str(saldo),
+        "--quantidade", str(quantidade),
+        "--interval", interval,
+    ]
+    if live_mode:
+        cmd.append("--live")
+    if testnet:
+        cmd.append("--testnet")
+
+    os.makedirs(str(BASE_DIR.parent / "logs"), exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _live_log_path = str(BASE_DIR.parent / "logs" / f"live_{timestamp}.log")
+    log_file = open(_live_log_path, "w", encoding="utf-8")
+
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+
+    _live_process = subprocess.Popen(
+        cmd,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        cwd=str(BASE_DIR.parent),
+        text=True,
+        env=env,
+        creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if sys.platform == "win32" else 0,
+    )
+    log_file.close()
+
+    return JSONResponse({"ok": True, "pid": _live_process.pid, "log": _live_log_path})
+
+
+@app.post("/api/live/parar")
+async def live_parar():
+    global _live_process
+
+    if not _live_process or _live_process.poll() is not None:
+        return JSONResponse({"ok": False, "erro": "Bot nao esta em execucao"})
+
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(_live_process.pid)],
+                           capture_output=True, timeout=5)
+        else:
+            _live_process.send_signal(signal.SIGTERM)
+            _live_process.wait(timeout=5)
+    except Exception:
+        if _live_process.poll() is None:
+            _live_process.kill()
+
+    _live_process = None
+    return JSONResponse({"ok": True, "mensagem": "Bot parado"})
+
+
+@app.get("/api/live/status")
+async def live_status():
+    global _live_process
+
+    running = _live_process is not None and _live_process.poll() is None
+    linhas = []
+    if _live_log_path and os.path.exists(_live_log_path):
+        try:
+            with open(_live_log_path, "r", encoding="utf-8") as f:
+                todas = f.readlines()
+                linhas = todas[-100:]
+        except Exception:
+            pass
+
+    return JSONResponse({"ok": True, "running": running, "log": linhas, "log_path": _live_log_path})
+
+
+@app.get("/api/live/candles")
+async def live_candles():
+    candles_path = BASE_DIR.parent / "resultados" / "live_candles.json"
+    if not candles_path.exists():
+        return JSONResponse({"ok": True, "candles": [], "trades": []})
+    try:
+        with open(str(candles_path), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return JSONResponse({"ok": True, "candles": data.get("candles", []), "trades": data.get("trades", [])})
+    except Exception:
+        return JSONResponse({"ok": True, "candles": [], "trades": []})
 
 
 if __name__ == "__main__":

@@ -7,17 +7,22 @@ class GridSpotStrategy(EstrategiaBase):
     def __init__(self, symbol: str, num_grids: int = 10,
                  spacing_percent: float = 0.01,
                  quantidade_por_ordem: float = 0.001,
+                 quantidade_por_trade: float | None = None,
                  saldo_inicial: float = 10000,
                  recomprar_apos_venda: bool = True,
                  max_grids_ativos: int = 5,
-                 stop_loss_percent: float = 0.05,
-                 usar_trailing_stop: bool = False,
-                 trailing_stop_percent: float = 0.02,
-                 debug: bool = False):
+                  take_profit_percent: float = 0.0,
+                  stop_loss_percent: float = 0.05,
+                  usar_trailing_stop: bool = False,
+                  trailing_stop_percent: float = 0.02,
+                  debug: bool = False):
         super().__init__(symbol, saldo_inicial, debug=debug)
         self.num_grids = num_grids
         self.spacing_percent = spacing_percent
-        self.quantidade_por_ordem = quantidade_por_ordem
+        if quantidade_por_trade is not None:
+            self.quantidade_por_ordem = quantidade_por_trade
+        else:
+            self.quantidade_por_ordem = quantidade_por_ordem
         self.recomprar_apos_venda = recomprar_apos_venda
         self.max_grids_ativos = max_grids_ativos
         self.stop_loss_percent = stop_loss_percent

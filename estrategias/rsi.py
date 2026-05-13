@@ -15,8 +15,9 @@ class RSIStrategy(EstrategiaBase):
                  max_perdas_consecutivas: int = 5,
                  cooldown_periods: int = 10,
                  usar_filtro_tendencia: bool = False,
-                 usar_filtro_volume: bool = False):
-        super().__init__(symbol, saldo_inicial)
+                 usar_filtro_volume: bool = False,
+                 debug: bool = False):
+        super().__init__(symbol, saldo_inicial, debug=debug)
         self.periodo = periodo
         self.limite_inferior = limite_inferior
         self.limite_superior = limite_superior

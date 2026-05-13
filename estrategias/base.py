@@ -13,6 +13,7 @@ class EstrategiaBase(ABC):
         self.saldo_inicial = saldo_inicial
         self.debug = debug
         self.timestamps_ordens = deque(maxlen=10)
+        self.live_mode: bool = False
         self.reset()
 
     def _log(self, msg: str, nivel: str = "INFO") -> None:
@@ -151,18 +152,27 @@ class EstrategiaBase(ABC):
         return variancia ** 0.5
 
     def _verificar_rate_limit(self) -> bool:
+        if not self.live_mode:
+            return True
+
         agora = time.time()
+        tentativas = 0
 
-        while self.timestamps_ordens and agora - self.timestamps_ordens[0] > 1.0:
-            self.timestamps_ordens.popleft()
+        while tentativas < 20:
+            while self.timestamps_ordens and agora - self.timestamps_ordens[0] > 1.0:
+                self.timestamps_ordens.popleft()
 
-        if len(self.timestamps_ordens) >= 10:
-            self._log("Rate limit atingido, aguardando 0.1s...", "RATE_LIMIT")
+            if len(self.timestamps_ordens) < 10:
+                self.timestamps_ordens.append(agora)
+                return True
+
+            tentativas += 1
+            self._log(f"Rate limit atingido, aguardando 0.1s... (tentativa {tentativas}/20)", "RATE_LIMIT")
             time.sleep(0.1)
-            return self._verificar_rate_limit()
+            agora = time.time()
 
-        self.timestamps_ordens.append(agora)
-        return True
+        self._log("Rate limit estourou apos 20 tentativas", "ERRO")
+        return False
 
     def em_cooldown(self, ultimo_trade_timestamp, cooldown_segundos: int = 60) -> bool:
         if ultimo_trade_timestamp is None:
@@ -231,6 +241,38 @@ class EstrategiaBase(ABC):
     def executar_compra(self, preco: float, quantidade: float, timestamp=None, **kwargs):
         self._verificar_rate_limit()
 
+        if self.live_mode and self.client:
+            try:
+                quote_qty = round(preco * quantidade, 2)
+                order = self.client.order_market_buy(
+                    symbol=self.symbol,
+                    quoteOrderQty=quote_qty
+                )
+                if order['status'] == 'FILLED':
+                    executed_qty = float(order['executedQty'])
+                    spent_qty = float(order['cummulativeQuoteQty'])
+                    actual_price = spent_qty / executed_qty if executed_qty > 0 else preco
+
+                    self.saldo_usdt -= spent_qty
+                    self.posicao += executed_qty
+                    self.em_posicao = True
+                    self.ultimo_preco = actual_price
+
+                    trade = self.registrar_trade('BUY', actual_price, executed_qty, timestamp,
+                                                 custo=spent_qty, order_id=order['orderId'], **kwargs)
+
+                    time_str = trade['timestamp'].strftime('%H:%M:%S') if hasattr(trade['timestamp'], 'strftime') else str(trade['timestamp'])
+                    print(f"[{time_str}] COMPRA REAL: {executed_qty:.8f} @ ${actual_price:.2f} | Gasto: ${spent_qty:.2f} | OrderID: {order['orderId']}")
+
+                    return trade
+                else:
+                    self._log(f"Ordem de compra nao foi totalmente preenchida. Status: {order['status']}", "ERRO")
+                    return None
+            except Exception as e:
+                self._log(f"Erro ao executar ordem de compra real: {e}", "ERRO")
+                print(f"  [ERRO] Falha na ordem de compra real: {e}")
+                return None
+
         custo = preco * quantidade
 
         if custo <= self.saldo_usdt + 0.0001:
@@ -254,6 +296,41 @@ class EstrategiaBase(ABC):
 
     def executar_venda(self, preco: float, quantidade: float, timestamp=None, **kwargs):
         self._verificar_rate_limit()
+
+        if self.live_mode and self.client:
+            try:
+                order = self.client.order_market_sell(
+                    symbol=self.symbol,
+                    quantity=quantidade
+                )
+                if order['status'] == 'FILLED':
+                    executed_qty = float(order['executedQty'])
+                    received_qty = float(order['cummulativeQuoteQty'])
+                    actual_price = received_qty / executed_qty if executed_qty > 0 else preco
+
+                    self.saldo_usdt += received_qty
+                    self.posicao -= executed_qty
+
+                    if self.posicao <= 0.00000001:
+                        self.em_posicao = False
+                        self.posicao = 0.0
+
+                    self.ultimo_preco = actual_price
+
+                    trade = self.registrar_trade('SELL', actual_price, executed_qty, timestamp,
+                                                 receita=received_qty, order_id=order['orderId'], **kwargs)
+
+                    time_str = trade['timestamp'].strftime('%H:%M:%S') if hasattr(trade['timestamp'], 'strftime') else str(trade['timestamp'])
+                    print(f"[{time_str}] VENDA REAL: {executed_qty:.8f} @ ${actual_price:.2f} | Recebido: ${received_qty:.2f} | OrderID: {order['orderId']}")
+
+                    return trade
+                else:
+                    self._log(f"Ordem de venda nao foi totalmente preenchida. Status: {order['status']}", "ERRO")
+                    return None
+            except Exception as e:
+                self._log(f"Erro ao executar ordem de venda real: {e}", "ERRO")
+                print(f"  [ERRO] Falha na ordem de venda real: {e}")
+                return None
 
         if quantidade <= self.posicao + 0.00000001:
             self.saldo_usdt += preco * quantidade

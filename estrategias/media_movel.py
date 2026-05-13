@@ -5,7 +5,9 @@ class MediaMovelStrategy(EstrategiaBase):
     def __init__(self, symbol: str, periodo_curto: int = 7,
                  periodo_longo: int = 21,
                  quantidade_por_trade: float = 0.01,
-                 saldo_inicial: float = 10000):
+                 saldo_inicial: float = 10000,
+                 stop_loss_percent: float = 0.0,
+                 take_profit_percent: float = 0.0):
         super().__init__(symbol, saldo_inicial)
         self.periodo_curto = periodo_curto
         self.periodo_longo = periodo_longo
@@ -19,8 +21,9 @@ class MediaMovelStrategy(EstrategiaBase):
         if len(self.historico_precos) < self.periodo_longo:
             return []
 
-        media_curta = sum(self.historico_precos[-self.periodo_curto:]) / self.periodo_curto
-        media_longa = sum(self.historico_precos[-self.periodo_longo:]) / self.periodo_longo
+        precos_lista = list(self.historico_precos)
+        media_curta = sum(precos_lista[-self.periodo_curto:]) / self.periodo_curto
+        media_longa = sum(precos_lista[-self.periodo_longo:]) / self.periodo_longo
 
         ordens_executadas = []
 

@@ -8,8 +8,8 @@ class MultiTimeframeStrategy(EstrategiaBase):
                  stop_loss_percent: float = 0.02,
                  take_profit_percent: float = 0.03,
                  trailing_stop_percent: float = 0.01):
-        super().__init__(symbol, saldo_inicial)
         self.periodos = periodos or [5, 15, 60]
+        super().__init__(symbol, saldo_inicial)
         self.quantidade_por_trade = quantidade_por_trade
         self.stop_loss_percent = stop_loss_percent
         self.take_profit_percent = take_profit_percent

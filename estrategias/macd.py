@@ -47,10 +47,11 @@ class MACDStrategy(EstrategiaBase):
         if len(precos) < periodo:
             return precos[-1] if precos else 0
 
+        precos_lista = list(precos) if not isinstance(precos, list) else precos
         multiplicador = 2 / (periodo + 1)
-        ema = sum(precos[:periodo]) / periodo
+        ema = sum(precos_lista[:periodo]) / periodo
 
-        for preco in precos[periodo:]:
+        for preco in precos_lista[periodo:]:
             ema = (preco - ema) * multiplicador + ema
 
         return ema

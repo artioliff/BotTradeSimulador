@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import sys
 import argparse
@@ -50,6 +51,7 @@ def parse_args():
     p.add_argument("--testnet", action="store_true", default=os.getenv("USE_TESTNET", "false").lower() == "true", help="Usar testnet")
     p.add_argument("--debug", action="store_true", help="Modo debug")
     p.add_argument("--reset-estado", action="store_true", help="Ignora estado salvo anterior")
+    p.add_argument("--live", action="store_true", default=os.getenv("LIVE_MODE", "false").lower() == "true", help="Executar ordens reais na Binance")
     return p.parse_args()
 
 
@@ -130,10 +132,15 @@ async def main():
             client = Client()
             log.info("Cliente publico (sem autenticacao)")
 
+        estrategia.live_mode = args.live
+        if args.live:
+            estrategia.set_client(client)
+            log.warning("MODE LIVE: Ordens reais serao executadas na Binance!")
+        else:
+            log.info("MODE SIMULACAO: Apenas simulacao")
+
         log.info("Iniciando coleta LIVE da Binance para %s...", args.symbol)
 
-        import time
-        time.sleep(2)
         ticker = client.get_symbol_ticker(symbol=args.symbol)
         current_price = float(ticker['price'])
         log.info("Preco atual: $%.2f | Saldo: $%.2f USDT", current_price, estrategia.saldo_inicial)
@@ -146,21 +153,44 @@ async def main():
 
         contador_candles = 0
         contador_trades = 0
+        primeiro_candle = True
+        candle_buffer: list[dict] = []
+        trade_markers: list[dict] = []
+
+        def salvar_dados_live():
+            with open("resultados/live_candles.json", "w") as f:
+                json.dump({
+                    "candles": candle_buffer,
+                    "trades": trade_markers[-100:],
+                }, f)
 
         def processar_candle(candle_data):
-            nonlocal contador_candles, contador_trades
+            nonlocal contador_candles, contador_trades, candle_buffer, trade_markers, primeiro_candle
             try:
                 if not candle_data:
                     return
                 kline = candle_data['k']
                 if not kline['x']:
                     return
+                open_price = float(kline['o'])
                 close_price = float(kline['c'])
                 high_price = float(kline['h'])
                 low_price = float(kline['l'])
                 volume = float(kline['v'] if kline['v'] else 0)
                 timestamp = datetime.fromtimestamp(kline['T'] / 1000)
                 contador_candles += 1
+                if primeiro_candle:
+                    primeiro_candle = False
+                    log.info("Primeiro candle recebido! %s O:%.2f H:%.2f L:%.2f C:%.2f",
+                             timestamp.strftime('%H:%M:%S'), open_price, high_price, low_price, close_price)
+                candle_buffer.append({
+                    "time": kline['T'] // 1000,
+                    "open": open_price, "high": high_price,
+                    "low": low_price, "close": close_price,
+                    "volume": volume,
+                })
+                if len(candle_buffer) > 200:
+                    candle_buffer[:] = candle_buffer[-200:]
                 if contador_candles % 5 == 0:
                     log.info("[%s] C:%.2f H:%.2f L:%.2f V:%.2f",
                              timestamp.strftime('%H:%M:%S'), close_price, high_price, low_price, volume)
@@ -169,9 +199,16 @@ async def main():
                     high=high_price, low=low_price, volume=volume)
                 if trades:
                     contador_trades += len(trades)
+                    for t in trades:
+                        trade_markers.append({
+                            "time": kline['T'] // 1000,
+                            "tipo": t.get("tipo", ""),
+                            "preco": t.get("preco", close_price),
+                        })
                     log.info(">>> TRADE EXECUTADO! Total: %d", contador_trades)
                 if contador_candles % SALVAR_ESTADO_A_CADA == 0:
                     estado_persistente.salvar(estrategia)
+                    salvar_dados_live()
             except Exception as e:
                 log.error("Erro ao processar candle: %s", e)
 
@@ -184,7 +221,7 @@ async def main():
                 bsm = BinanceSocketManager(async_client)
                 log.info("Conectando WebSocket... (tentativa %d/5)", tentativa + 1)
                 ts = bsm.kline_socket(symbol=args.symbol, interval=args.interval)
-                log.info("WebSocket conectado! Processando candles de %s...", args.interval)
+                log.info("WebSocket conectado! Aguardando candles de %s...", args.interval)
                 log.info("Pressione Ctrl+C para parar")
                 async with ts as tscm:
                     while True:
@@ -208,6 +245,7 @@ async def main():
         if async_client:
             await async_client.close_connection()
         estado_persistente.salvar(estrategia)
+        salvar_dados_live()
         tempo_execucao = (datetime.now() - tempo_inicio).total_seconds()
         filename = salvar_relatorio(estrategia, args.symbol, tempo_execucao)
         summary = estrategia.get_relatorio()

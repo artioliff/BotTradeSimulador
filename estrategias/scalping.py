@@ -5,7 +5,9 @@ class ScalpingStrategy(EstrategiaBase):
     def __init__(self, symbol: str, lookback: int = 10,
                  min_variacao: float = 0.001,
                  quantidade_por_trade: float = 0.001,
-                 saldo_inicial: float = 10000):
+                 saldo_inicial: float = 10000,
+                 stop_loss_percent: float = 0.0,
+                 take_profit_percent: float = 0.0):
         super().__init__(symbol, saldo_inicial)
         self.lookback = lookback
         self.min_variacao = min_variacao

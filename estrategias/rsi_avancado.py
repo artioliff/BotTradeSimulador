@@ -233,7 +233,8 @@ class RSIAvancadoStrategy(EstrategiaBase):
                 return 'LATERAL', 0
         else:
             # Método simples: compara com SMA
-            media_longa = sum(self.historico_precos[-self.periodo_tendencia:]) / self.periodo_tendencia
+            precos_lista_tendencia = list(self.historico_precos)
+            media_longa = sum(precos_lista_tendencia[-self.periodo_tendencia:]) / self.periodo_tendencia
             
             if preco_atual > media_longa * 1.05:  # 5% acima
                 return 'ALTA', (preco_atual - media_longa) / media_longa * 100

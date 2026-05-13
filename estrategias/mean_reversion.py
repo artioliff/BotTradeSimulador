@@ -24,7 +24,8 @@ class MeanReversionStrategy(EstrategiaBase):
         if len(self.historico_precos) < self.periodo:
             return []
 
-        media = sum(self.historico_precos[-self.periodo:]) / self.periodo
+        precos_lista = list(self.historico_precos)
+        media = sum(precos_lista[-self.periodo:]) / self.periodo
         desvio_percentual = (preco - media) / media
 
         ordens = []
